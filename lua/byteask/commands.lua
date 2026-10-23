@@ -131,8 +131,12 @@ local function run_headless(argv, opts)
     end,
   })
 
-  if opts.stdin and opts.stdin ~= '' and out.job and out.job > 0 then
-    vim.fn.chansend(out.job, opts.stdin)
+  if out.job and out.job > 0 then
+    if opts.stdin and opts.stdin ~= '' then
+      vim.fn.chansend(out.job, opts.stdin)
+    end
+    -- Always close: `byteask exec` reads stdin to EOF even when the prompt came
+    -- from argv, and jobstart keeps the child's stdin pipe open until we say so.
     vim.fn.chanclose(out.job, 'stdin')
   end
 end

@@ -2,12 +2,16 @@
 --
 --   nvim --headless --clean -l tests/exec_stdin.lua
 --
--- The selection/diagnostics block must travel on stdin, not in the command
--- line: `byteask exec` appends piped stdin as a `<stdin>` block, while Windows
--- refuses to spawn a process whose command line exceeds 32K characters.
+-- Two properties are checked here. The selection/diagnostics block must travel
+-- on stdin rather than the command line: `byteask exec` appends piped stdin as
+-- a `<stdin>` block, while Windows refuses to spawn a process whose command
+-- line exceeds 32K characters. And stdin must always be closed, prompt-only
+-- runs included, because `byteask exec` reads stdin to EOF before it starts.
 -- Exits non-zero when any expectation fails.
 local this = debug.getinfo(1, 'S').source:sub(2)
 vim.opt.runtimepath:prepend(vim.fn.fnamemodify(this, ':p:h:h'))
+
+require('byteask.config').options.notify_on_exit = false
 
 local captured = {}
 
@@ -36,7 +40,8 @@ end
 
 local commands = require('byteask.commands')
 
--- A selection big enough to blow the Windows command-line limit on its own.
+-- Scenario A: instruction plus a selection big enough to blow the Windows
+-- command-line limit on its own.
 local context = string.rep('x', 40000)
 commands.exec('Improve this code.', context)
 
@@ -54,6 +59,21 @@ check(
   'stdin bytes: ' .. tostring(captured.stdin and #captured.stdin)
 )
 check('stdin is closed so the CLI sees EOF', captured.closed == 'stdin')
+
+-- Scenario B: prompt only. `byteask exec` still waits for stdin EOF, so the
+-- channel has to be closed even when nothing was sent. Finishing scenario A
+-- through its on_exit clears the module's in-flight job; the short wait lets
+-- the scheduled output callbacks run before we start the next run.
+captured.opts.on_exit(4242, 0)
+vim.wait(100, function()
+  return false
+end)
+captured = {}
+commands.exec('Explain this file.')
+
+check('prompt-only run starts a job', captured.opts ~= nil)
+check('prompt-only run sends no stdin data', captured.stdin == nil)
+check('prompt-only run still closes stdin', captured.closed == 'stdin')
 
 if failures > 0 then
   print(string.format('\n%d check(s) FAILED', failures))
