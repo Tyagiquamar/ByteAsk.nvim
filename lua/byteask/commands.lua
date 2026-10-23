@@ -198,7 +198,10 @@ function M.review(scope)
       end
     end)
   else
-    run_review({})
+    -- `byteask review` has no "everything" flag: with neither a scope flag nor a
+    -- positional instruction it exits with "Specify --uncommitted, --base,
+    -- --commit, or provide custom review instructions".
+    run_review({ 'Review the entire repository.' })
   end
 end
 
