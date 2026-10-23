@@ -57,12 +57,25 @@ local function clear_out()
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, {})
 end
 
---- Run `byteask apply` to apply the latest agent diff to the working tree.
---- No common flags: `apply` only performs a git-apply and rejects model/-c flags.
+--- Run `byteask apply <task_id>` to apply that task's diff to the working tree.
+--- The CLI requires the id (see `byteask apply --help`), so prompt for it when
+--- the caller has none. No model flag: `apply` accepts -c/--enable/--disable
+--- but not -m, which is why this builds off base_cmd().
+---@param task_id string|nil id of the task whose diff should be applied
 ---@param on_done fun(ok: boolean)|nil
-function M.apply(on_done)
+function M.apply(task_id, on_done)
+  if not task_id or task_id == '' then
+    vim.ui.input({ prompt = 'ByteAsk task id to apply: ' }, function(input)
+      if input and input ~= '' then
+        M.apply(vim.trim(input), on_done)
+      end
+    end)
+    return
+  end
+
   local argv = util.base_cmd()
   argv[#argv + 1] = 'apply'
+  argv[#argv + 1] = task_id
   vim.fn.jobstart(argv, {
     cwd = vim.loop.cwd(),
     on_exit = function(_, code)
@@ -70,7 +83,7 @@ function M.apply(on_done)
         local ok = code == 0
         if ok then
           vim.cmd('checktime') -- reload any buffers changed on disk
-          vim.notify('ByteAsk: applied latest diff to working tree.', vim.log.levels.INFO)
+          vim.notify('ByteAsk: applied the diff for task ' .. task_id .. '.', vim.log.levels.INFO)
         else
           vim.notify('ByteAsk apply failed (code ' .. tostring(code) .. ').', vim.log.levels.ERROR)
         end
