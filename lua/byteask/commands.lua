@@ -131,7 +131,7 @@ local function run_headless(argv, opts)
     end,
   })
 
-  if opts.stdin and opts.stdin ~= '' then
+  if opts.stdin and opts.stdin ~= '' and out.job and out.job > 0 then
     vim.fn.chansend(out.job, opts.stdin)
     vim.fn.chanclose(out.job, 'stdin')
   end
@@ -139,18 +139,19 @@ end
 
 --- `byteask exec` with a prompt. Streams JSONL-free text output.
 ---@param prompt string
----@param extra_context string|nil prepended to the prompt as an fenced block
+---@param extra_context string|nil editor context piped to the CLI on stdin, after the prompt
 function M.exec(prompt, extra_context)
   if (not prompt or prompt == '') and (not extra_context or extra_context == '') then
     vim.notify('ByteAsk exec: empty prompt.', vim.log.levels.WARN)
     return
   end
-  local full = prompt or ''
-  if extra_context and extra_context ~= '' then
-    full = full .. '\n\n```\n' .. extra_context .. '\n```'
-  end
-  local argv = util.build_subcommand({ 'exec' }, { full })
-  run_headless(argv, { title = 'exec', apply_after = config.options.auto_apply })
+  -- The editor context rides on stdin instead of the command line: `byteask exec`
+  -- appends piped stdin as a `<stdin>` block, whereas a command line holding a
+  -- few hundred selected lines fails to spawn on Windows, whose process command
+  -- line is capped at 32K characters.
+  local tail = (prompt and prompt ~= '') and { prompt } or {}
+  local argv = util.build_subcommand({ 'exec' }, tail)
+  run_headless(argv, { title = 'exec', stdin = extra_context, apply_after = config.options.auto_apply })
 end
 
 local function run_review(flags)
