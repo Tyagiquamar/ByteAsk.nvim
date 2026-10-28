@@ -13,14 +13,17 @@ local config = require('byteask.config')
 config.options.notify_on_exit = false
 
 local jobs = {}
-rawset(vim.fn, 'jobstart', function(argv)
+local job_opts = {}
+rawset(vim.fn, 'jobstart', function(argv, opts)
   jobs[#jobs + 1] = argv
+  job_opts[#job_opts + 1] = opts
   return 4242
 end)
 
-local prompt_seen, answer
+local prompt_seen, default_seen, answer
 rawset(vim.ui, 'input', function(opts, cb)
   prompt_seen = opts.prompt
+  default_seen = opts.default
   cb(answer)
 end)
 
@@ -56,6 +59,45 @@ local before = #jobs
 answer = ''
 commands.apply()
 check('a blank id starts no job', #jobs == before)
+
+-- Session ID capture from headless exec output
+config.options.auto_apply = true
+commands.exec('Generate changes.')
+local last_exec = job_opts[#job_opts]
+if last_exec and last_exec.on_stdout then
+  last_exec.on_stdout(4242, { 'session id: task-uuid-999', 'generating patch...' })
+end
+if last_exec and last_exec.on_exit then
+  last_exec.on_exit(4242, 0)
+  vim.wait(100, function()
+    return false
+  end)
+end
+config.options.auto_apply = false
+
+local auto_applied = jobs[#jobs] or {}
+check(
+  'auto_apply applies the captured session id',
+  auto_applied[2] == 'apply' and auto_applied[3] == 'task-uuid-999',
+  vim.inspect(auto_applied)
+)
+
+-- Default populated in prompt
+prompt_seen, default_seen, answer = nil, nil, nil
+commands.apply()
+check('input prompt defaults to last captured task id', default_seen == 'task-uuid-999')
+
+-- Spawn failure calls on_done(false)
+local old_jobstart = vim.fn.jobstart
+rawset(vim.fn, 'jobstart', function()
+  return -1
+end)
+local done_result = nil
+commands.apply('task-fail', function(ok)
+  done_result = ok
+end)
+check('spawn failure calls on_done(false)', done_result == false)
+rawset(vim.fn, 'jobstart', old_jobstart)
 
 if failures > 0 then
   print(string.format('\n%d check(s) FAILED', failures))

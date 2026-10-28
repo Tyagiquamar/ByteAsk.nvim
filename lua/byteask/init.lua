@@ -29,8 +29,8 @@ end
 M.review = function(scope)
   commands.review(scope)
 end
-M.apply = function()
-  commands.apply()
+M.apply = function(task_id, on_done)
+  commands.apply(task_id, on_done)
 end
 M.fix_diagnostics = function()
   commands.fix_diagnostics()
