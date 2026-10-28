@@ -42,7 +42,19 @@ local function append(lines)
   if type(lines) == 'string' then
     lines = vim.split(lines, '\n', { plain = true })
   end
-  vim.api.nvim_buf_set_lines(buf, -1, -1, false, lines)
+  local flat = {}
+  for _, item in ipairs(lines) do
+    if type(item) == 'string' and item:find('\n', 1, true) then
+      for _, sub in ipairs(vim.split(item, '\n', { plain = true })) do
+        flat[#flat + 1] = sub:gsub('\r$', '')
+      end
+    elseif type(item) == 'string' then
+      flat[#flat + 1] = item:gsub('\r$', '')
+    else
+      flat[#flat + 1] = item
+    end
+  end
+  vim.api.nvim_buf_set_lines(buf, -1, -1, false, flat)
   -- Keep the output window scrolled to the bottom.
   for _, win in ipairs(vim.api.nvim_list_wins()) do
     if vim.api.nvim_win_get_buf(win) == buf then
@@ -113,7 +125,7 @@ local function run_headless(argv, opts)
     end
   end
 
-  out.job = vim.fn.jobstart(argv, {
+  local job = vim.fn.jobstart(argv, {
     cwd = vim.loop.cwd(),
     stdout_buffered = false,
     on_stdout = on_data,
@@ -131,18 +143,24 @@ local function run_headless(argv, opts)
     end,
   })
 
-  if out.job and out.job > 0 then
-    if opts.stdin and opts.stdin ~= '' then
-      vim.fn.chansend(out.job, opts.stdin)
-    end
-    -- Always close: `byteask exec` reads stdin to EOF even when the prompt came
-    -- from argv, and jobstart keeps the child's stdin pipe open until we say so.
-    vim.fn.chanclose(out.job, 'stdin')
+  if not job or job <= 0 then
+    out.job = nil
+    vim.notify('ByteAsk: failed to start process (' .. tostring(job) .. ').', vim.log.levels.ERROR)
+    return
   end
+
+  out.job = job
+
+  if opts.stdin and opts.stdin ~= '' then
+    vim.fn.chansend(out.job, opts.stdin)
+  end
+  -- Always close: `byteask exec` reads stdin to EOF even when the prompt came
+  -- from argv, and jobstart keeps the child's stdin pipe open until we say so.
+  vim.fn.chanclose(out.job, 'stdin')
 end
 
 --- `byteask exec` with a prompt. Streams JSONL-free text output.
----@param prompt string
+---@param prompt string|nil
 ---@param extra_context string|nil editor context piped to the CLI on stdin, after the prompt
 function M.exec(prompt, extra_context)
   if (not prompt or prompt == '') and (not extra_context or extra_context == '') then
@@ -153,8 +171,9 @@ function M.exec(prompt, extra_context)
   -- appends piped stdin as a `<stdin>` block, whereas a command line holding a
   -- few hundred selected lines fails to spawn on Windows, whose process command
   -- line is capped at 32K characters.
-  local tail = (prompt and prompt ~= '') and { prompt } or {}
-  local argv = util.build_subcommand({ 'exec' }, tail)
+  local default_instruction = 'Improve this code.'
+  local instruction = (prompt and prompt ~= '') and prompt or default_instruction
+  local argv = util.build_subcommand({ 'exec' }, { instruction })
   run_headless(argv, { title = 'exec', stdin = extra_context, apply_after = config.options.auto_apply })
 end
 

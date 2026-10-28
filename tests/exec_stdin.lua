@@ -75,6 +75,52 @@ check('prompt-only run starts a job', captured.opts ~= nil)
 check('prompt-only run sends no stdin data', captured.stdin == nil)
 check('prompt-only run still closes stdin', captured.closed == 'stdin')
 
+-- Scenario C: streaming stdout/stderr with embedded newlines and CRLF
+-- should not throw buffer line set errors.
+local on_data_ok = pcall(function()
+  captured.opts.on_stdout(4242, { 'line 1\r\nline 2', 'line 3\nline 4' })
+end)
+check('multiline stdout chunk is accepted without error', on_data_ok)
+
+captured.opts.on_exit(4242, 0)
+vim.wait(100, function()
+  return false
+end)
+
+-- Scenario D: failed jobstart does not leave the headless runner deadlocked.
+local old_jobstart = vim.fn.jobstart
+rawset(vim.fn, 'jobstart', function()
+  return -1
+end)
+captured = {}
+commands.exec('Failing command.')
+check('failing jobstart does not capture stdin', captured.stdin == nil)
+
+rawset(vim.fn, 'jobstart', old_jobstart)
+captured = {}
+commands.exec('Recovered command.')
+check('subsequent execution succeeds after a failed jobstart', captured.opts ~= nil)
+
+captured.opts.on_exit(4242, 0)
+vim.wait(100, function()
+  return false
+end)
+
+-- Scenario E: context-only exec defaults to instruction on command line
+captured = {}
+commands.exec(nil, 'auto context')
+check(
+  'context-only exec falls back to default instruction',
+  vim.tbl_contains(captured.argv or {}, 'Improve this code.')
+)
+check('context-only exec routes context to stdin', captured.stdin == 'auto context')
+check('context-only exec closes stdin', captured.closed == 'stdin')
+
+captured.opts.on_exit(4242, 0)
+vim.wait(100, function()
+  return false
+end)
+
 if failures > 0 then
   print(string.format('\n%d check(s) FAILED', failures))
   vim.cmd('cquit 1')
