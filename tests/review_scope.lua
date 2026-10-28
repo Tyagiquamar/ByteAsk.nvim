@@ -62,6 +62,34 @@ check(
   last ~= nil and last:sub(1, 2) ~= '--' and last:find('entire repository', 1, true) ~= nil,
   vim.inspect(argv)
 )
+finish_run()
+
+-- Custom instruction string
+commands.review('Check concurrency safety')
+local custom_argv = captured.argv or {}
+local custom_last = custom_argv[#custom_argv]
+check(
+  'custom review scope passes custom instructions',
+  custom_last == 'Check concurrency safety',
+  vim.inspect(custom_argv)
+)
+finish_run()
+
+-- Invalid/empty scope starts no job
+commands.review('   ')
+check('blank review scope starts no job', captured.argv == nil)
+
+-- Process failure recovery
+local old_jobstart = vim.fn.jobstart
+rawset(vim.fn, 'jobstart', function()
+  return -1
+end)
+commands.review('repo')
+rawset(vim.fn, 'jobstart', old_jobstart)
+captured = {}
+commands.review('repo')
+check('headless runner recovers after failed jobstart', captured.argv ~= nil)
+finish_run()
 
 if failures > 0 then
   print(string.format('\n%d check(s) FAILED', failures))
