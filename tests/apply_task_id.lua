@@ -19,6 +19,10 @@ rawset(vim.fn, 'jobstart', function(argv, opts)
   job_opts[#job_opts + 1] = opts
   return 4242
 end)
+rawset(vim.fn, 'chansend', function()
+  return 1
+end)
+rawset(vim.fn, 'chanclose', function() end)
 
 local prompt_seen, default_seen, answer
 rawset(vim.ui, 'input', function(opts, cb)
